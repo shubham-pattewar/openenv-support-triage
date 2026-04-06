@@ -88,6 +88,7 @@ def get_model_action(client: OpenAI, step: int, obs_msg: str, tickets: list, que
                 {"role": "user", "content": user_prompt},
             ],
             temperature=TEMPERATURE,
+            response_format={"type": "json_object"},
         )
         action_str = (completion.choices[0].message.content or "").strip()
         # Remove any Markdown code block wrapping if LLM gets confused
@@ -99,6 +100,8 @@ def get_model_action(client: OpenAI, step: int, obs_msg: str, tickets: list, que
         parsed = json.loads(action_str)
         return SupportTriageAction(**parsed), action_str
     except Exception as exc:
+        with open("debug.log", "a") as f:
+            f.write(f"Exception: {exc}\nRaw Action Str: {action_str}\n---\n")
         print(f"[DEBUG] Model request or parsing failed: {exc} | Raw string: {action_str}", flush=True)
         return SupportTriageAction(action_type="done"), action_str
 
@@ -156,7 +159,7 @@ async def main() -> None:
             steps_taken = step
             
             # Escape action string for standard log formatting (no newlines)
-            safe_action_str = raw_str.replace('\\n', '').replace('\\r', '')
+            safe_action_str = raw_str.replace('\n', ' ').replace('\r', '')
             log_step(step=step, action=safe_action_str, reward=reward, done=done, error=error)
 
             history.append(f"Step {step}: {safe_action_str} -> reward {reward:+.2f}")

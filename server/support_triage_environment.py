@@ -45,10 +45,10 @@ TICKETS_DB = {
     110: {"text": "Do you offer a free trial?", "type": "reply", "valid_replies": ["14-day", "14 day", "free trial", "trial"]},
 }
 
-TASKS = {
-    "easy":   [101],                             # 1 clear ticket
-    "medium": [101, 102, 103],                   # 3 clear tickets, mixed departments
-    "hard":   [101, 106, 107, 104, 108, 110],    # 6 tickets: 2 traps + 1 FAQ + clear routing
+SUPPORT_TRIAGE_TASKS = {
+    "easy":   [101],
+    "medium": [101, 102, 103],
+    "hard":   [101, 106, 107, 104, 108, 110],
 }
 
 KB_TEXT = (
@@ -76,7 +76,7 @@ class SupportTriageEnvironment(Environment):
         self.total_tickets = 0
         self.last_read_id = None
         self.current_task = "easy"
-        self.read_count = 0  # track unnecessary reads for efficiency penalty
+        self.read_count = 0 
 
     def reset(self) -> SupportTriageObservation:
         """Reset the environment."""
@@ -85,14 +85,18 @@ class SupportTriageEnvironment(Environment):
         
         # Determine task from environment variable, default to 'easy'
         self.current_task = os.getenv("SUPPORT_TRIAGE_TASK", "easy").lower()
-        if self.current_task not in TASKS:
+        if self.current_task not in SUPPORT_TRIAGE_TASKS:
             self.current_task = "easy"
             
-        ticket_ids = TASKS[self.current_task]
-        self.queue = copy.deepcopy([
-            {"id": tid, "subject": TICKETS_DB[tid]["text"][:30] + "...", "full_text": TICKETS_DB[tid]["text"]}
-            for tid in ticket_ids
-        ])
+        ticket_ids = SUPPORT_TRIAGE_TASKS[self.current_task]
+        self.queue = []
+        for tid in ticket_ids:
+            ticket = copy.deepcopy(TICKETS_DB[tid])
+            self.queue.append({
+                "id": tid,
+                "subject": ticket["text"][:30] + "...",
+                "full_text": ticket["text"]
+            })
         
         self.total_tickets = len(self.queue)
         self.last_read_id = None
@@ -134,7 +138,6 @@ class SupportTriageEnvironment(Environment):
         msg = f"Action {action.action_type} recognized."
         done = False
         
-        # Calculate step reward value for a single successful action
         val_per_ticket = 1.0 / self.total_tickets if self.total_tickets > 0 else 0.0
 
         if action.action_type == "read_ticket":
@@ -160,7 +163,6 @@ class SupportTriageEnvironment(Environment):
                     
                     if correct_type == "route" and action.department == correct_dept:
                         base_reward = val_per_ticket
-                        # Efficiency bonus: +20% if agent correctly routed a trap ticket after reading it
                         if is_trap and was_read:
                             bonus = base_reward * 0.2
                             reward = min(base_reward + bonus, val_per_ticket * 1.2)
@@ -197,7 +199,7 @@ class SupportTriageEnvironment(Environment):
                     else:
                         msg = f"Ticket {action.ticket_id} should have been routed, not replied to!"
                     
-                    self.queue.pop(idx) # consumed
+                    self.queue.pop(idx)
                     if self.last_read_id == action.ticket_id:
                         self.last_read_id = None
                 else:
