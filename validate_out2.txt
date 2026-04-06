@@ -1,0 +1,4 @@
+[FAIL] support_triage: Not ready for multi-mode deployment
+
+Issues found:
+  - Missing uv.lock - run 'uv lock' to generate it
