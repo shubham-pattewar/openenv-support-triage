@@ -12,22 +12,54 @@ except ImportError:
 
 
 TICKETS_DB = {
-    101: {"department": "billing", "text": "I was charged twice on my credit card last week! Please help. My account is john@example.com.", "type": "route"},
-    102: {"department": "technical", "text": "I'm getting a 500 internal server error when I try to upload my profile picture. The button just spins.", "type": "route"},
-    103: {"department": "sales", "text": "Can I get a volume discount for 50 users on the enterprise plan? We are comparing you with your competitor.", "type": "route"},
-    104: {"text": "What are your business hours?", "type": "reply", "valid_replies": ["9", "5", "est", "9am", "5pm"]},
-    105: {"text": "Where can I find the API documentation?", "type": "reply", "valid_replies": ["api.example.com", "api"]},
-    106: {"department": "billing", "text": "I need a copy of my last invoice for my accounting department.", "type": "route"},
-    107: {"department": "technical", "text": "The mobile app keeps crashing on my iPhone 14 whenever I open the messages tab.", "type": "route"},
+    # Clear-cut routing tickets
+    101: {"department": "billing",   "text": "I was charged twice on my credit card last week! Please help. My account is john@example.com.", "type": "route"},
+    102: {"department": "technical", "text": "I'm getting a 500 internal server error when I try to upload my profile picture. The button just spins forever.", "type": "route"},
+    103: {"department": "sales",     "text": "Can I get a volume discount for 50 users on the enterprise plan? We are comparing you with competitor pricing.", "type": "route"},
+    # FAQ / reply tickets
+    104: {"text": "What are your business hours?",               "type": "reply", "valid_replies": ["9", "5", "est", "9am", "5pm", "monday", "friday"]},
+    105: {"text": "Where can I find the API documentation?",     "type": "reply", "valid_replies": ["api.example.com", "api"]},
+    # TRAP tickets — topic label in subject is misleading; correct department differs from naive reading
+    106: {
+        "department": "technical",
+        "text": (
+            "BILLING DEPARTMENT — Please help. My invoice shows the correct amount but "
+            "after I click 'Pay Now', the payment page crashes with a JavaScript error. "
+            "I cannot complete the payment due to this bug."
+        ),
+        "type": "route",
+        "trap": True,  # Mentions billing but is actually a technical bug
+    },
+    107: {
+        "department": "billing",
+        "text": (
+            "TECH SUPPORT — Hi, my account was automatically upgraded to the Pro plan yesterday "
+            "without my consent and I was charged $149. I did not request this upgrade. "
+            "Please reverse the charge immediately."
+        ),
+        "type": "route",
+        "trap": True,  # Mentions tech support but is a billing dispute
+    },
+    108: {"department": "technical", "text": "The mobile app keeps crashing on my iPhone 14 whenever I open the messages tab after the latest update.", "type": "route"},
+    109: {"department": "sales",     "text": "We are a startup and would like to discuss a custom pilot program for 10 developers. Who should we talk to?", "type": "route"},
+    110: {"text": "Do you offer a free trial?", "type": "reply", "valid_replies": ["14-day", "14 day", "free trial", "trial"]},
 }
 
 TASKS = {
-    "easy": [101],
-    "medium": [101, 102, 103],
-    "hard": [101, 107, 103, 104, 105],
+    "easy":   [101],                             # 1 clear ticket
+    "medium": [101, 102, 103],                   # 3 clear tickets, mixed departments
+    "hard":   [101, 106, 107, 104, 108, 110],    # 6 tickets: 2 traps + 1 FAQ + clear routing
 }
 
-KB_TEXT = "KNOWLEDGE BASE: 1. Business hours are 9 AM to 5 PM EST, Monday-Friday. 2. API documentation is located at api.example.com."
+KB_TEXT = (
+    "KNOWLEDGE BASE: "
+    "1. Business hours are 9 AM to 5 PM EST, Monday-Friday. "
+    "2. API documentation is located at api.example.com. "
+    "3. We offer a 14-day free trial, no credit card required. "
+    "4. Route payment/charge/invoice disputes to billing. "
+    "5. Route app crashes, errors, and technical bugs to technical. "
+    "6. Route discount, pricing, and sales inquiries to sales."
+)
 
 class SupportTriageEnvironment(Environment):
     """
@@ -44,6 +76,7 @@ class SupportTriageEnvironment(Environment):
         self.total_tickets = 0
         self.last_read_id = None
         self.current_task = "easy"
+        self.read_count = 0  # track unnecessary reads for efficiency penalty
 
     def reset(self) -> SupportTriageObservation:
         """Reset the environment."""
@@ -57,12 +90,13 @@ class SupportTriageEnvironment(Environment):
             
         ticket_ids = TASKS[self.current_task]
         self.queue = copy.deepcopy([
-            {"id": tid, "subject": TICKETS_DB[tid]["text"][:20] + "...", "full_text": TICKETS_DB[tid]["text"]}
+            {"id": tid, "subject": TICKETS_DB[tid]["text"][:30] + "...", "full_text": TICKETS_DB[tid]["text"]}
             for tid in ticket_ids
         ])
         
         self.total_tickets = len(self.queue)
         self.last_read_id = None
+        self.read_count = 0
 
         return self._generate_observation("Environment reset. Ready to triage tickets.", 0.0, False)
 
@@ -108,11 +142,12 @@ class SupportTriageEnvironment(Environment):
                 idx, t = self._get_ticket_from_queue(action.ticket_id)
                 if t:
                     self.last_read_id = action.ticket_id
-                    msg = f"Read ticket {action.ticket_id}."
+                    self.read_count += 1
+                    msg = f"Read ticket {action.ticket_id}. Full text now visible in ticket_queue."
                 else:
                     msg = f"Ticket {action.ticket_id} not found."
             else:
-                msg = "ticket_id is required."
+                msg = "ticket_id is required for read_ticket."
 
         elif action.action_type == "route_ticket":
             if action.ticket_id is not None and action.department is not None:
@@ -120,20 +155,29 @@ class SupportTriageEnvironment(Environment):
                 if t:
                     correct_dept = TICKETS_DB[action.ticket_id].get("department")
                     correct_type = TICKETS_DB[action.ticket_id].get("type")
+                    is_trap = TICKETS_DB[action.ticket_id].get("trap", False)
+                    was_read = self.last_read_id == action.ticket_id
                     
                     if correct_type == "route" and action.department == correct_dept:
-                        msg = f"Successfully routed ticket {action.ticket_id} to {action.department}!"
-                        reward = val_per_ticket
+                        base_reward = val_per_ticket
+                        # Efficiency bonus: +20% if agent correctly routed a trap ticket after reading it
+                        if is_trap and was_read:
+                            bonus = base_reward * 0.2
+                            reward = min(base_reward + bonus, val_per_ticket * 1.2)
+                            msg = f"Excellent! Correctly identified and routed trap ticket {action.ticket_id} to {action.department} after reading!"
+                        else:
+                            reward = base_reward
+                            msg = f"Successfully routed ticket {action.ticket_id} to {action.department}!"
                     else:
-                        msg = f"Incorrect routing for ticket {action.ticket_id}!"
+                        msg = f"Incorrect routing for ticket {action.ticket_id}. No reward given."
                         
-                    self.queue.pop(idx) # consumed
+                    self.queue.pop(idx)
                     if self.last_read_id == action.ticket_id:
                         self.last_read_id = None
                 else:
-                    msg = f"Ticket {action.ticket_id} not found."
+                    msg = f"Ticket {action.ticket_id} not found in queue."
             else:
-                msg = "ticket_id and department are required."
+                msg = "ticket_id and department are required for route_ticket."
                 
         elif action.action_type == "reply_ticket":
             if action.ticket_id is not None and action.reply_text is not None:
