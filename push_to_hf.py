@@ -20,7 +20,6 @@ EXCLUDE = {
     "validate_out*.txt",
     "push_to_hf.py",
     "fix_uvlock.py",
-    "uv.lock",
 }
 
 def should_exclude(path: Path) -> bool:
