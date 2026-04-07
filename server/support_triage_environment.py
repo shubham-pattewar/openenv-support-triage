@@ -46,7 +46,7 @@ TICKETS_DB = {
 }
 
 SUPPORT_TRIAGE_TASKS = {
-    "easy":   [101],
+    "easy":   [101, 104],
     "medium": [101, 102, 103],
     "hard":   [101, 106, 107, 104, 108, 110],
 }
@@ -162,13 +162,15 @@ class SupportTriageEnvironment(Environment):
                     was_read = self.last_read_id == action.ticket_id
                     
                     if correct_type == "route" and action.department == correct_dept:
-                        base_reward = val_per_ticket
-                        if is_trap and was_read:
-                            bonus = base_reward * 0.2
-                            reward = min(base_reward + bonus, val_per_ticket * 1.2)
-                            msg = f"Excellent! Correctly identified and routed trap ticket {action.ticket_id} to {action.department} after reading!"
+                        if is_trap:
+                            if was_read:
+                                reward = val_per_ticket
+                                msg = f"Excellent! Correctly identified and routed trap ticket {action.ticket_id} to {action.department} after reading!"
+                            else:
+                                reward = val_per_ticket * 0.5
+                                msg = f"You correctly routed trap ticket {action.ticket_id}, but you didn't read it first. Partial reward given."
                         else:
-                            reward = base_reward
+                            reward = val_per_ticket
                             msg = f"Successfully routed ticket {action.ticket_id} to {action.department}!"
                     else:
                         msg = f"Incorrect routing for ticket {action.ticket_id}. No reward given."
