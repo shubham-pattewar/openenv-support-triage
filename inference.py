@@ -174,7 +174,8 @@ async def main() -> None:
                 break
 
         score = sum(rewards)
-        score = min(max(score, 0.0), 1.0)  # clamp to [0, 1]
+        # Keep final task score strictly inside (0, 1) for validators that reject endpoints.
+        score = min(max(score, 0.01), 0.99)
         success = score >= 0.99 # almost perfect required
 
     finally:

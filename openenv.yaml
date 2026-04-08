@@ -6,6 +6,7 @@ app: server.app:app
 port: 8000
 tasks:
   - id: easy
+    score_range: [0.01, 0.99]
     reset_kwargs:
       task: easy
     grader:
@@ -15,6 +16,7 @@ tasks:
       - type: rubric
         name: trajectory
   - id: medium
+    score_range: [0.01, 0.99]
     reset_kwargs:
       task: medium
     grader:
@@ -24,6 +26,7 @@ tasks:
       - type: rubric
         name: trajectory
   - id: hard
+    score_range: [0.01, 0.99]
     reset_kwargs:
       task: hard
     grader:
