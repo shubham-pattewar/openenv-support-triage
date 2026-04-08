@@ -32,3 +32,7 @@ class SupportTriageObservation(Observation):
     remaining_tickets: int = Field(..., description="Number of tickets remaining in the queue to be processed.")
     ticket_queue: List[Dict] = Field(..., description="List of tickets. Shows ID and subject preview if not explicitly read. Shows full text if read last turn.")
     knowledge_base: str = Field(..., description="The internal knowledge base for answering FAQ.")
+    grader_score: Optional[float] = Field(
+        None,
+        description="Final trajectory grade for the current task. Set on completion and always strictly between 0 and 1.",
+    )

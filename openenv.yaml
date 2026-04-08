@@ -9,29 +9,17 @@ tasks:
     score_range: [0.01, 0.99]
     reset_kwargs:
       task: easy
-    grader:
-      type: rubric
-      name: trajectory
-    graders:
-      - type: rubric
-        name: trajectory
+    grader: trajectory
+    graders: [trajectory]
   - id: medium
     score_range: [0.01, 0.99]
     reset_kwargs:
       task: medium
-    grader:
-      type: rubric
-      name: trajectory
-    graders:
-      - type: rubric
-        name: trajectory
+    grader: trajectory
+    graders: [trajectory]
   - id: hard
     score_range: [0.01, 0.99]
     reset_kwargs:
       task: hard
-    grader:
-      type: rubric
-      name: trajectory
-    graders:
-      - type: rubric
-        name: trajectory
+    grader: trajectory
+    graders: [trajectory]

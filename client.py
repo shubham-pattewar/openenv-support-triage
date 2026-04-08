@@ -30,6 +30,7 @@ class SupportTriageEnv(
             remaining_tickets=obs_data.get("remaining_tickets", 0),
             ticket_queue=obs_data.get("ticket_queue", []),
             knowledge_base=obs_data.get("knowledge_base", ""),
+            grader_score=obs_data.get("grader_score"),
             done=payload.get("done", False),
             reward=payload.get("reward"),
             metadata=obs_data.get("metadata", {}),

@@ -149,11 +149,17 @@ class SupportTriageEnvironment(Environment):
             else:
                 ticket_queue_view.append({"id": ticket["id"], "text": ticket["subject"]})
                 
+        final_grade = None
+        if done:
+            # Deep validator requires strict open interval bounds.
+            final_grade = max(0.01, min(0.99, self.cumulative_score))
+
         obs = SupportTriageObservation(
             message=message,
             remaining_tickets=len(self.queue),
             ticket_queue=ticket_queue_view,
             knowledge_base=KB_TEXT,
+            grader_score=final_grade,
             metadata={"final_score": self.cumulative_score} if done else {},
             done=done,
             reward=reward,
