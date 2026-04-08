@@ -4,22 +4,29 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
+metadata:
+  title: Customer Support Triage OpenEnv
+  description: Deterministic customer support triage benchmark with routing and FAQ reply tasks.
+  tags:
+    - openenv
+    - customer-support
+    - triage
 tasks:
   - id: easy
-    score_range: [0.01, 0.99]
     reset_kwargs:
       task: easy
-    grader: trajectory
-    graders: [trajectory]
+    graders:
+      - trajectory
+    score_range: [0.0, 1.0]
   - id: medium
-    score_range: [0.01, 0.99]
     reset_kwargs:
       task: medium
-    grader: trajectory
-    graders: [trajectory]
+    graders:
+      - trajectory
+    score_range: [0.0, 1.0]
   - id: hard
-    score_range: [0.01, 0.99]
     reset_kwargs:
       task: hard
-    grader: trajectory
-    graders: [trajectory]
+    graders:
+      - trajectory
+    score_range: [0.0, 1.0]

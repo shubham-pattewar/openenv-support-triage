@@ -1,38 +1,59 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Typed models for the customer support triage OpenEnv environment."""
 
-"""
-Data models for the Support Triage Environment.
-"""
+from typing import Dict, List, Literal, Optional
 
 from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
-from typing import Literal, Optional, List, Dict
+
 
 class SupportTriageAction(Action):
-    """Action for the Support Triage environment - read, route, or reply."""
+    """Action schema for a support operations agent."""
 
     action_type: Literal["read_ticket", "route_ticket", "reply_ticket", "done"] = Field(
-        ..., description="The type of action to perform: 'read_ticket' a specific ticket, 'route_ticket' to a department, 'reply_ticket' directly to user, or 'done'."
+        ...,
+        description=(
+            "Action to perform. Read reveals full ticket text, route assigns a ticket to a "
+            "department, reply resolves FAQ tickets, and done ends the episode."
+        ),
     )
-    ticket_id: Optional[int] = Field(None, description="The ID of the ticket to read, route, or reply to.")
+    ticket_id: Optional[int] = Field(
+        default=None,
+        description="Ticket identifier for read, route, and reply actions.",
+    )
     department: Optional[Literal["billing", "technical", "sales"]] = Field(
-        None, description="The department to route the ticket to (required if action_type is 'route_ticket')."
+        default=None,
+        description="Destination team for route_ticket.",
     )
-    reply_text: Optional[str] = Field(None, description="The text to reply with (required if action_type is 'reply_ticket').")
+    reply_text: Optional[str] = Field(
+        default=None,
+        description="Customer-facing reply for reply_ticket.",
+    )
 
 
 class SupportTriageObservation(Observation):
-    """Observation from the Support Triage environment."""
+    """Observation schema returned after each environment transition."""
 
-    message: str = Field(..., description="System response resulting from the last action.")
-    remaining_tickets: int = Field(..., description="Number of tickets remaining in the queue to be processed.")
-    ticket_queue: List[Dict] = Field(..., description="List of tickets. Shows ID and subject preview if not explicitly read. Shows full text if read last turn.")
-    knowledge_base: str = Field(..., description="The internal knowledge base for answering FAQ.")
+    task_id: str = Field(..., description="Current task split: easy, medium, or hard.")
+    task_objective: str = Field(..., description="High-level goal for the episode.")
+    message: str = Field(..., description="Environment feedback for the most recent action.")
+    remaining_tickets: int = Field(..., description="Number of unresolved tickets left in the queue.")
+    ticket_queue: List[Dict[str, object]] = Field(
+        ...,
+        description="Visible ticket queue. Unread tickets show previews; read tickets show full text.",
+    )
+    processed_ticket_ids: List[int] = Field(
+        ...,
+        description="Ticket IDs already resolved during this episode.",
+    )
+    knowledge_base: str = Field(
+        ...,
+        description="Internal help-center snippets available to the agent.",
+    )
+    last_action_error: Optional[str] = Field(
+        default=None,
+        description="Validation or execution error for the most recent action, if any.",
+    )
     grader_score: Optional[float] = Field(
-        None,
-        description="Final trajectory grade for the current task. Set on completion and always strictly between 0 and 1.",
+        default=None,
+        description="Final deterministic task score in the range [0.0, 1.0]. Present when done.",
     )

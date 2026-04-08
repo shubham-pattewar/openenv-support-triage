@@ -1,74 +1,193 @@
 ---
 title: Customer Support Triage OpenEnv
-emoji: 🎫
+emoji: "📨"
 colorFrom: blue
 colorTo: indigo
 sdk: docker
 app_port: 8000
 pinned: false
+tags:
+  - openenv
 ---
 
-# Customer Support Triage Environment
+# Customer Support Triage OpenEnv
 
-A real-world task environment for OpenEnv focused on Customer Support Triage.
+`support_triage` is a real-world OpenEnv benchmark for customer support operations. The agent works through an inbox of incoming tickets, chooses when to inspect full ticket text, routes operational issues to the correct team, and answers simple FAQ tickets from an internal knowledge base.
 
-Processing support tickets is a genuine task that human support agents and AIs do daily.
-The environment evaluates an AI agent's ability to read tickets from a queue, classify
-and route them to the right departments, or directly reply to simple FAQ questions using
-an internal Knowledge Base.
+This is meant to model actual work that human support specialists and support copilots do every day:
 
-## Task Details
+- triaging billing, technical, and sales requests
+- avoiding misroutes on ambiguous tickets
+- giving accurate FAQ replies from internal documentation
+- managing a queue efficiently under a step budget
 
-The agent is exposed to a queue of incoming customer support tickets.
-The agent has access to a Knowledge Base with common FAQs like business hours or documentation links.
+## Why this environment is useful
 
-Tasks Available:
-- easy: Single ticket requiring simple routing to billing.
-- medium: 3 tickets requiring routing to billing, technical, and sales.
-- hard: 5 tickets mixing routing and direct FAQ replies.
+Most agent benchmarks over-index on browser control or toy tasks. Support triage is a high-value operational workflow with clear success criteria, partial-progress rewards, and genuine failure modes:
 
-Set the environment variable SUPPORT_TRIAGE_TASK to easy, medium, or hard.
+- correct action choice matters
+- reading before acting can improve outcomes
+- rushed routing can still get partial credit on easy tickets but loses points on ambiguous cases
+- invalid actions and premature episode termination reduce final score
 
-## Observation Space
+## OpenEnv Interface
 
-SupportTriageObservation:
-- message (str): System response of the previous action.
-- remaining_tickets (int): Number of tickets left in the queue.
-- ticket_queue (List[Dict]): List of tickets with ID and preview. Full text shown after read_ticket.
-- knowledge_base (str): Internal KB snippets for FAQ answering.
+The environment implements the standard OpenEnv API:
 
-## Action Space
+- `reset(task="easy" | "medium" | "hard") -> observation`
+- `step(action) -> observation, reward, done, info`
+- `state() -> current episode state`
 
-SupportTriageAction:
-- action_type (str): One of "read_ticket", "route_ticket", "reply_ticket", "done".
-- ticket_id (int, optional): The ID of the ticket.
-- department (str, optional): Routing destination - billing, technical, or sales.
-- reply_text (str, optional): Message content to reply with.
+Typed Pydantic models are defined in `models.py`.
 
-## Grader and Reward
+### Action space
 
-For each correctly processed ticket a partial reward of 1.0 / total_tickets is given.
-An incorrect action gives 0.0 reward. Fully clearing the queue correctly gives score 1.0.
+`SupportTriageAction`
 
-## Setup and Usage
+- `action_type`: `"read_ticket" | "route_ticket" | "reply_ticket" | "done"`
+- `ticket_id`: integer ticket ID for read/route/reply actions
+- `department`: `"billing" | "technical" | "sales"` for routing
+- `reply_text`: customer-facing response for FAQ tickets
 
-Local testing:
-    uv run server
+### Observation space
 
-Using with openenv-core:
-    from support_triage.client import SupportTriageEnv
-    env = SupportTriageEnv(base_url="http://localhost:8000")
-    obs = env.reset()
+`SupportTriageObservation`
 
-## Baseline Inference
+- `task_id`: current task split
+- `task_objective`: natural-language episode goal
+- `message`: environment feedback after the last action
+- `remaining_tickets`: unresolved queue size
+- `ticket_queue`: visible queue state; unread tickets expose previews, read tickets expose full text
+- `processed_ticket_ids`: tickets already handled
+- `knowledge_base`: internal support KB available to the agent
+- `last_action_error`: validation or execution error from the previous action
+- `grader_score`: final task score in `[0.0, 1.0]` when the episode ends
 
-    export API_BASE_URL="https://api.openai.com/v1"
-    export MODEL_NAME="gpt-4o-mini"
-    export HF_TOKEN="your_key_here"
-    export SUPPORT_TRIAGE_TASK="hard"
-    python inference.py
+## Tasks
 
-Expected output:
-    [START] task=hard env=support_triage model=gpt-4o-mini
-    [STEP] step=1 action={"action_type": "route_ticket", ...} reward=0.20 done=false error=null
-    [END] success=true steps=5 score=1.000 rewards=0.20,0.20,0.20,0.20,0.20
+The benchmark contains three deterministic tasks with increasing difficulty.
+
+### Easy
+
+- 3 tickets
+- straightforward billing, technical, and FAQ tickets
+- rewards fast, correct routing and correct business-hours reply
+
+### Medium
+
+- 4 tickets
+- mixes clear tickets with one deceptive routing case
+- includes an API documentation reply ticket
+
+### Hard
+
+- 6 tickets
+- multiple ambiguous previews
+- multiple FAQ replies
+- penalizes premature `done`, invalid actions, and sloppy triage under a fixed step budget
+
+## Reward design
+
+The reward function is shaped over the full trajectory.
+
+- reading a ticket gives a small positive reward because it reveals information
+- correctly resolving a ticket increases the normalized episode score
+- ambiguous tickets lose credit if routed without being read first
+- incorrect actions give `0.0` step reward and reduce the final trajectory score through deterministic penalties
+- final `grader_score` is clipped to `[0.0, 1.0]`
+
+This gives dense enough feedback for learning while preserving a clear end-task objective.
+
+## Project layout
+
+```text
+.
+├── client.py
+├── graders.py
+├── inference.py
+├── models.py
+├── openenv.yaml
+├── pyproject.toml
+├── README.md
+├── Dockerfile
+└── server
+    ├── app.py
+    ├── Dockerfile
+    └── support_triage_environment.py
+```
+
+## Local setup
+
+Create the environment and install dependencies:
+
+```bash
+uv sync
+```
+
+Run the API locally:
+
+```bash
+uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
+
+Validate the environment:
+
+```bash
+uv run openenv validate
+```
+
+## Docker
+
+Build and run from the repository root:
+
+```bash
+docker build -t support-triage-openenv .
+docker run --rm -p 8000:8000 support-triage-openenv
+```
+
+The container serves the OpenEnv API on port `8000`.
+
+## Hugging Face Spaces
+
+This repository is structured for a Docker Space deployment.
+
+- SDK: `docker`
+- App port: `8000`
+- Tag the Space with `openenv`
+
+Once deployed, the validator should be able to `POST /reset` successfully.
+
+## Baseline inference
+
+The required root-level baseline script is [`inference.py`](./inference.py). It:
+
+- uses the OpenAI client for all model calls
+- reads `API_BASE_URL`, `MODEL_NAME`, and `HF_TOKEN`
+- optionally uses `LOCAL_IMAGE_NAME` when running against a local Docker image
+- runs all three tasks sequentially
+- emits `[START]`, `[STEP]`, and `[END]` lines in the required format
+
+Example environment variables:
+
+```bash
+export API_BASE_URL="https://router.huggingface.co/v1"
+export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
+export HF_TOKEN="your-token"
+python inference.py
+```
+
+Reference baseline targets with a competent instruction-tuned model and `temperature=0.0`:
+
+- easy: `0.85+`
+- medium: `0.70+`
+- hard: `0.55+`
+
+Exact results depend on the served model, but the tasks and grader are deterministic.
+
+## Validation helper
+
+You can run the included submission validator after deployment:
+
+```bash
+bash validate-submission.sh https://your-space-name.hf.space .
+```
