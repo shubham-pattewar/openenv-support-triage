@@ -1,6 +1,7 @@
 import os
 import copy
 from uuid import uuid4
+from typing import Any, Optional
 
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
@@ -78,13 +79,24 @@ class SupportTriageEnvironment(Environment):
         self.current_task = "easy"
         self.read_count = 0 
 
-    def reset(self) -> SupportTriageObservation:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> SupportTriageObservation:
         """Reset the environment."""
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count += 1
         
-        # Determine task from environment variable, default to 'easy'
-        self.current_task = os.getenv("SUPPORT_TRIAGE_TASK", "easy").lower()
+        # Determine task from kwargs or environment variable, default to 'easy'
+        self.current_task = "easy"
+        if "task" in kwargs:
+            self.current_task = str(kwargs["task"]).lower()
+        elif "task_id" in kwargs:
+            self.current_task = str(kwargs["task_id"]).lower()
+        else:
+            self.current_task = os.getenv("SUPPORT_TRIAGE_TASK", "easy").lower()
         if self.current_task not in SUPPORT_TRIAGE_TASKS:
             self.current_task = "easy"
             
@@ -102,7 +114,7 @@ class SupportTriageEnvironment(Environment):
         self.last_read_id = None
         self.read_count = 0
 
-        return self._generate_observation("Environment reset. Ready to triage tickets.", 0.0, False)
+        return self._generate_observation("Environment reset. Ready to triage tickets.", 0.01, False)
 
     def _generate_observation(self, message: str, reward: float, done: bool) -> SupportTriageObservation:
         ticket_queue_view = []
@@ -138,7 +150,7 @@ class SupportTriageEnvironment(Environment):
         msg = f"Action {action.action_type} recognized."
         done = False
         
-        val_per_ticket = 1.0 / self.total_tickets if self.total_tickets > 0 else 0.0
+        val_per_ticket = 0.98 / self.total_tickets if self.total_tickets > 0 else 0.0
 
         if action.action_type == "read_ticket":
             if action.ticket_id is not None:
