@@ -15,7 +15,7 @@ def test_easy_task_reaches_perfect_score():
 
     obs = env.step(SupportTriageAction(action_type="route_ticket", ticket_id=102, department="technical"))
     assert obs.done is True
-    assert obs.grader_score == 1.0
+    assert obs.grader_score == 0.999
 
 
 def test_hard_task_penalizes_unread_ambiguous_ticket():
@@ -27,4 +27,4 @@ def test_hard_task_penalizes_unread_ambiguous_ticket():
 
     obs = env.step(SupportTriageAction(action_type="done"))
     assert obs.done is True
-    assert 0.0 <= (obs.grader_score or 0.0) < 1.0
+    assert 0.0 < (obs.grader_score or 0.0) < 1.0

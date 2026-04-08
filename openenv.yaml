@@ -17,16 +17,16 @@ tasks:
       task: easy
     graders:
       - trajectory
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]
   - id: medium
     reset_kwargs:
       task: medium
     graders:
       - trajectory
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]
   - id: hard
     reset_kwargs:
       task: hard
     graders:
       - trajectory
-    score_range: [0.0, 1.0]
+    score_range: [0.001, 0.999]

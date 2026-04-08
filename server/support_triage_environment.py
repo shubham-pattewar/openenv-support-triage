@@ -202,6 +202,8 @@ TASKS: Dict[str, List[int]] = {
     "hard": [106, 107, 108, 110, 105, 109],
 }
 
+SCORE_EPSILON = 0.001
+
 
 class SupportTriageEnvironment(Environment):
     """Real-world customer support triage environment."""
@@ -288,10 +290,16 @@ class SupportTriageEnvironment(Environment):
         score = (resolved - loop_penalty - invalid_penalty) / self.total_possible_score
         return max(0.0, min(1.0, round(score, 6)))
 
+    def _strict_score(self) -> float:
+        raw_score = self._normalized_score()
+        strict_score = SCORE_EPSILON + ((1.0 - (2 * SCORE_EPSILON)) * raw_score)
+        return round(strict_score, 6)
+
     def _observation(self, message: str, reward: float, done: bool) -> SupportTriageObservation:
-        score = self._normalized_score()
+        raw_score = self._normalized_score()
+        strict_score = self._strict_score()
         if done:
-            self.final_score = score
+            self.final_score = strict_score
 
         return SupportTriageObservation(
             task_id=self.current_task,
@@ -302,11 +310,12 @@ class SupportTriageEnvironment(Environment):
             processed_ticket_ids=list(self.processed_ticket_ids),
             knowledge_base=KNOWLEDGE_BASE,
             last_action_error=self.last_action_error,
-            grader_score=score if done else None,
+            grader_score=strict_score if done else None,
             done=done,
             reward=max(0.0, min(1.0, reward)),
             metadata={
-                "final_score": score if done else None,
+                "final_score": strict_score if done else None,
+                "raw_score": raw_score if done else None,
                 "invalid_actions": self.invalid_actions,
                 "loop_warnings": self.loop_warnings,
                 "step_budget": self.max_steps,
