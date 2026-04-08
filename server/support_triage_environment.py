@@ -7,27 +7,6 @@ from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 try:
-    from openenv.core.rubrics.trajectory import TrajectoryRubric
-    from typing import List, Tuple
-except ImportError:
-    class TrajectoryRubric: # type: ignore
-        pass
-
-class SupportTriageRubric(TrajectoryRubric): # type: ignore
-    def score_trajectory(self, trajectory: List[Tuple[Any, Any]]) -> float:
-        final_obs = trajectory[-1][1]
-        score = getattr(final_obs, "metadata", {}).get("final_score", 0.0)
-        return max(0.01, min(0.99, score))
-
-    def compute_step_rewards(self) -> List[float]:
-        if not self._trajectory:
-            return []
-        score = self.score_trajectory(self._trajectory)
-        return [0.0] * (len(self._trajectory) - 1) + [score]
-
-
-
-try:
     from ..models import SupportTriageAction, SupportTriageObservation
 except ImportError:
     from models import SupportTriageAction, SupportTriageObservation
@@ -93,7 +72,6 @@ class SupportTriageEnvironment(Environment):
     def __init__(self):
         """Initialize the support_triage environment."""
         super().__init__()
-        self.rubric = SupportTriageRubric()
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count = 0
         self.queue = []
@@ -175,17 +153,22 @@ class SupportTriageEnvironment(Environment):
     def step(self, action: SupportTriageAction) -> SupportTriageObservation:  # type: ignore[override]
         """Execute a step in the environment."""
         self._state.step_count += 1
-        
+    
+        # If agent ends early or there are no tickets left, return a valid score
         if len(self.queue) == 0 or action.action_type == "done":
-            obs = self._generate_observation("All tickets processed or agent called done.", 0.0, True)
-            return obs
-
-        reward = 0.0
+            final_reward = max(0.01, min(0.99, self.cumulative_score))
+            return self._generate_observation(
+                "All tickets processed or agent called done.",
+                final_reward,
+                True,
+            )
+    
+        reward = 0.01  # must stay strictly inside (0,1)
         msg = f"Action {action.action_type} recognized."
         done = False
-        
-        val_per_ticket = 1.0 / self.total_tickets if self.total_tickets > 0 else 0.0
-
+    
+        val_per_ticket = 1.0 / self.total_tickets if self.total_tickets > 0 else 0.01
+    
         if action.action_type == "read_ticket":
             if action.ticket_id is not None:
                 idx, t = self._get_ticket_from_queue(action.ticket_id)
@@ -197,7 +180,7 @@ class SupportTriageEnvironment(Environment):
                     msg = f"Ticket {action.ticket_id} not found."
             else:
                 msg = "ticket_id is required for read_ticket."
-
+    
         elif action.action_type == "route_ticket":
             if action.ticket_id is not None and action.department is not None:
                 idx, t = self._get_ticket_from_queue(action.ticket_id)
@@ -206,21 +189,34 @@ class SupportTriageEnvironment(Environment):
                     correct_type = TICKETS_DB[action.ticket_id].get("type")
                     is_trap = TICKETS_DB[action.ticket_id].get("trap", False)
                     was_read = self.last_read_id == action.ticket_id
-                    
+    
                     if correct_type == "route" and action.department == correct_dept:
                         if is_trap:
                             if was_read:
                                 reward = val_per_ticket
-                                msg = f"Excellent! Correctly identified and routed trap ticket {action.ticket_id} to {action.department} after reading!"
+                                msg = (
+                                    f"Excellent! Correctly identified and routed trap ticket "
+                                    f"{action.ticket_id} to {action.department} after reading!"
+                                )
                             else:
                                 reward = val_per_ticket * 0.5
-                                msg = f"You correctly routed trap ticket {action.ticket_id}, but you didn't read it first. Partial reward given."
+                                msg = (
+                                    f"You correctly routed trap ticket {action.ticket_id}, "
+                                    f"but you didn't read it first. Partial reward given."
+                                )
                         else:
                             reward = val_per_ticket
-                            msg = f"Successfully routed ticket {action.ticket_id} to {action.department}!"
+                            msg = (
+                                f"Successfully routed ticket {action.ticket_id} "
+                                f"to {action.department}!"
+                            )
                     else:
-                        msg = f"Incorrect routing for ticket {action.ticket_id}. No reward given."
-                        
+                        reward = 0.01
+                        msg = (
+                            f"Incorrect routing for ticket {action.ticket_id}. "
+                            f"Minimal score assigned."
+                        )
+    
                     self.queue.pop(idx)
                     if self.last_read_id == action.ticket_id:
                         self.last_read_id = None
@@ -228,25 +224,34 @@ class SupportTriageEnvironment(Environment):
                     msg = f"Ticket {action.ticket_id} not found in queue."
             else:
                 msg = "ticket_id and department are required for route_ticket."
-                
+    
         elif action.action_type == "reply_ticket":
             if action.ticket_id is not None and action.reply_text is not None:
                 idx, t = self._get_ticket_from_queue(action.ticket_id)
                 if t:
                     correct_type = TICKETS_DB[action.ticket_id].get("type")
-                    
+    
                     if correct_type == "reply":
                         valid_answers = TICKETS_DB[action.ticket_id].get("valid_replies", [])
-                        replied_correctly = any(ans in action.reply_text.lower() for ans in valid_answers)
-                        
+                        replied_correctly = any(
+                            ans in action.reply_text.lower() for ans in valid_answers
+                        )
+    
                         if replied_correctly:
-                            msg = f"Successfully replied to ticket {action.ticket_id}!"
                             reward = val_per_ticket
+                            msg = f"Successfully replied to ticket {action.ticket_id}!"
                         else:
-                            msg = f"Incorrect reply for ticket {action.ticket_id}."
+                            reward = 0.01
+                            msg = (
+                                f"Incorrect reply for ticket {action.ticket_id}. "
+                                f"Minimal score assigned."
+                            )
                     else:
-                        msg = f"Ticket {action.ticket_id} should have been routed, not replied to!"
-                    
+                        reward = 0.01
+                        msg = (
+                            f"Ticket {action.ticket_id} should have been routed, not replied to!"
+                        )
+    
                     self.queue.pop(idx)
                     if self.last_read_id == action.ticket_id:
                         self.last_read_id = None
@@ -254,15 +259,20 @@ class SupportTriageEnvironment(Environment):
                     msg = f"Ticket {action.ticket_id} not found."
             else:
                 msg = "ticket_id and reply_text are required."
-                
+    
+        # keep cumulative score strictly inside valid range
+        self.cumulative_score += reward
+    
         if len(self.queue) == 0:
             msg += " All tickets cleared!"
             done = True
-
-        self.cumulative_score += reward
-        obs = self._generate_observation(msg, reward, done)
-        return obs
+    
+        # Clamp both reward and cumulative score to strict open interval
+        reward = max(0.01, min(0.99, reward))
+        self.cumulative_score = max(0.01, min(0.99, self.cumulative_score))
+    
+        return self._generate_observation(msg, reward, done)
 
     @property
-    def state(self) -> State:
+    def state(self):
         return self._state

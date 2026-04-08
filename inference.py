@@ -30,6 +30,7 @@ SYSTEM_PROMPT = textwrap.dedent(
     4. "done": Call this when the ticket queue is completely empty.
 
     Rules:
+    - CRITICAL INSTRUCTION: You MUST use 'read_ticket' on a ticket ID before attempting to route or reply to it! The previews are often misleading traps. ALWAYS read the full ticket first!
     - You must output exactly one valid JSON object representing your Action. 
     - The JSON object must contain `action_type`. It optionally contains `ticket_id` (integer), `department`, and `reply_text`.
     - Do not wrap the JSON in Markdown formatting like ```json ... ```. Just output the raw JSON.
