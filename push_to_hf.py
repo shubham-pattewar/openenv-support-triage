@@ -1,109 +1,95 @@
-"""
-Helper script to push the support_triage environment to Hugging Face Spaces.
-Run this from the support_triage directory:
-    python push_to_hf.py
-"""
+"""Upload the support_triage benchmark to a Hugging Face Docker Space."""
+
+from __future__ import annotations
+
+import fnmatch
 import os
 import sys
 from pathlib import Path
+
 from huggingface_hub import HfApi, create_repo
 
-REPO_ID = "shubham47404/support-triage-env"
+REPO_ID = os.getenv("HF_SPACE_REPO_ID", "shubham47404/support-triage-env")
 REPO_TYPE = "space"
 SPACE_SDK = "docker"
 
-# Files/folders to exclude from upload
-EXCLUDE = {
-    "__pycache__",
+EXCLUDE_PATTERNS = {
+    ".git",
     ".pytest_cache",
+    ".uv-cache",
+    ".venv",
+    "__pycache__",
+    "*.log",
+    "*.out",
     "*.pyc",
-    "validate_out*.txt",
+    "*.pyo",
+    "*.egg-info",
+    "debug.log",
+    "demo_output.txt",
+    "groq_out.txt",
+    "groq_output.log",
     "push_to_hf.py",
-    "fix_uvlock.py",
+    "validate_out*.txt",
 }
 
+
 def should_exclude(path: Path) -> bool:
+    path_str = path.as_posix()
     for part in path.parts:
-        if part in EXCLUDE or part.startswith("."):
+        if part in {".git", ".venv", "__pycache__", ".pytest_cache", ".uv-cache"}:
             return True
-    for pattern in EXCLUDE:
-        if "*" in pattern and path.match(pattern):
-            return True
-    return False
+    return any(fnmatch.fnmatch(path.name, pattern) or fnmatch.fnmatch(path_str, pattern) for pattern in EXCLUDE_PATTERNS)
 
 
-def main():
-    api = HfApi()
+def main() -> None:
+    root = Path(".").resolve()
+    api = HfApi(token=os.getenv("HF_TOKEN"))
 
-    # Check auth
     try:
         user = api.whoami()
         print(f"Authenticated as: {user['name']}")
-    except Exception as e:
-        print(f"ERROR: Not authenticated. Run 'huggingface-cli login' first.\n{e}")
+    except Exception as exc:
+        print(f"ERROR: Hugging Face authentication failed. Set HF_TOKEN or run huggingface-cli login.\n{exc}")
         sys.exit(1)
 
-    # Create or get repo
     try:
-        url = create_repo(
+        repo = create_repo(
             repo_id=REPO_ID,
             repo_type=REPO_TYPE,
             space_sdk=SPACE_SDK,
             exist_ok=True,
+            token=os.getenv("HF_TOKEN"),
         )
-        print(f"Space ready: {url}")
-    except Exception as e:
-        print(f"ERROR creating repo: {e}")
+        print(f"Space ready: {repo}")
+    except Exception as exc:
+        print(f"ERROR creating Space: {exc}")
         sys.exit(1)
 
-    # Collect files to upload
-    root = Path(".")
-    files_to_upload = []
-    for f in root.rglob("*"):
-        if f.is_file() and not should_exclude(f):
-            files_to_upload.append(f)
+    files_to_upload = sorted(
+        path for path in root.rglob("*") if path.is_file() and not should_exclude(path.relative_to(root))
+    )
 
-    print(f"\nUploading {len(files_to_upload)} files...")
+    if not any(path.name == "Dockerfile" and path.parent == root for path in files_to_upload):
+        print("ERROR: root Dockerfile is required for Hugging Face Docker Spaces.")
+        sys.exit(1)
 
-    # Move Dockerfile to root if it's in server/
-    dockerfile_src = root / "server" / "Dockerfile"
-    dockerfile_dst = root / "Dockerfile"
-    created_root_dockerfile = False
-    if dockerfile_src.exists() and not dockerfile_dst.exists():
-        import shutil
-        shutil.copy(dockerfile_src, dockerfile_dst)
-        files_to_upload.append(dockerfile_dst)
-        created_root_dockerfile = True
-        print("  Copied server/Dockerfile -> Dockerfile (required by HF Spaces)")
+    print(f"Uploading {len(files_to_upload)} files to {REPO_ID}...")
 
-    # Upload all files
-    errors = []
-    for i, f in enumerate(files_to_upload, 1):
+    for index, path in enumerate(files_to_upload, start=1):
+        relative_path = path.relative_to(root).as_posix()
         try:
             api.upload_file(
-                path_or_fileobj=str(f),
-                path_in_repo=str(f.as_posix()),
+                path_or_fileobj=str(path),
+                path_in_repo=relative_path,
                 repo_id=REPO_ID,
                 repo_type=REPO_TYPE,
             )
-            print(f"  [{i}/{len(files_to_upload)}] Uploaded: {f}")
-        except Exception as e:
-            print(f"  [{i}/{len(files_to_upload)}] FAILED: {f} -> {e}")
-            errors.append((f, e))
+            print(f"[{index}/{len(files_to_upload)}] Uploaded: {relative_path}")
+        except Exception as exc:
+            print(f"[{index}/{len(files_to_upload)}] FAILED: {relative_path} -> {exc}")
+            sys.exit(1)
 
-    # Cleanup
-    if created_root_dockerfile:
-        os.remove(dockerfile_dst)
-
-    print()
-    if errors:
-        print(f"WARNING: {len(errors)} file(s) failed to upload:")
-        for f, e in errors:
-            print(f"  {f}: {e}")
-    else:
-        print("SUCCESS! All files uploaded.")
-        print(f"\nYour Space is live at:")
-        print(f"  https://huggingface.co/spaces/{REPO_ID}")
+    print(f"SUCCESS: https://huggingface.co/spaces/{REPO_ID}")
 
 
 if __name__ == "__main__":

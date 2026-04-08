@@ -42,6 +42,8 @@ except ImportError:
     from models import SupportTriageAction, SupportTriageObservation
     from server.support_triage_environment import SupportTriageEnvironment
 
+from fastapi.responses import JSONResponse
+
 
 # Create the app with web interface and README integration
 app = create_app(
@@ -51,6 +53,12 @@ app = create_app(
     env_name="support_triage",
     max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
 )
+
+
+@app.get("/health")
+def health_check():
+    """Lightweight probe for Docker and Space health checks."""
+    return JSONResponse({"status": "ok", "env": "support_triage"})
 
 
 def main(host: str = "0.0.0.0", port: int = 8000):
