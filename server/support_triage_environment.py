@@ -7,6 +7,27 @@ from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 try:
+    from openenv.core.rubrics.trajectory import TrajectoryRubric
+    from typing import List, Tuple
+except ImportError:
+    class TrajectoryRubric: # type: ignore
+        pass
+
+class SupportTriageRubric(TrajectoryRubric): # type: ignore
+    def score_trajectory(self, trajectory: List[Tuple[Any, Any]]) -> float:
+        final_obs = trajectory[-1][1]
+        score = getattr(final_obs, "metadata", {}).get("final_score", 0.0)
+        return max(0.01, min(0.99, score))
+
+    def compute_step_rewards(self) -> List[float]:
+        if not self._trajectory:
+            return []
+        score = self.score_trajectory(self._trajectory)
+        return [0.0] * (len(self._trajectory) - 1) + [score]
+
+
+
+try:
     from ..models import SupportTriageAction, SupportTriageObservation
 except ImportError:
     from models import SupportTriageAction, SupportTriageObservation
@@ -71,13 +92,16 @@ class SupportTriageEnvironment(Environment):
 
     def __init__(self):
         """Initialize the support_triage environment."""
+        super().__init__()
+        self.rubric = SupportTriageRubric()
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._reset_count = 0
         self.queue = []
         self.total_tickets = 0
         self.last_read_id = None
         self.current_task = "easy"
-        self.read_count = 0 
+        self.read_count = 0
+        self.cumulative_score = 0.0
 
     def reset(
         self,
@@ -124,14 +148,16 @@ class SupportTriageEnvironment(Environment):
             else:
                 ticket_queue_view.append({"id": ticket["id"], "text": ticket["subject"]})
                 
-        return SupportTriageObservation(
+        obs = SupportTriageObservation(
             message=message,
             remaining_tickets=len(self.queue),
             ticket_queue=ticket_queue_view,
             knowledge_base=KB_TEXT,
+            metadata={"final_score": self.cumulative_score} if done else {},
             done=done,
             reward=reward,
         )
+        return obs
 
     def _get_ticket_from_queue(self, qid):
         for i, t in enumerate(self.queue):
@@ -144,13 +170,14 @@ class SupportTriageEnvironment(Environment):
         self._state.step_count += 1
         
         if len(self.queue) == 0 or action.action_type == "done":
-            return self._generate_observation("All tickets processed or agent called done.", 0.0, True)
+            obs = self._generate_observation("All tickets processed or agent called done.", 0.0, True)
+            return obs
 
         reward = 0.0
         msg = f"Action {action.action_type} recognized."
         done = False
         
-        val_per_ticket = 0.98 / self.total_tickets if self.total_tickets > 0 else 0.0
+        val_per_ticket = 1.0 / self.total_tickets if self.total_tickets > 0 else 0.0
 
         if action.action_type == "read_ticket":
             if action.ticket_id is not None:
@@ -225,7 +252,9 @@ class SupportTriageEnvironment(Environment):
             msg += " All tickets cleared!"
             done = True
 
-        return self._generate_observation(msg, reward, done)
+        self.cumulative_score += reward
+        obs = self._generate_observation(msg, reward, done)
+        return obs
 
     @property
     def state(self) -> State:
