@@ -6,5 +6,29 @@ app: server.app:app
 port: 8000
 tasks:
   - id: easy
+    reset_kwargs:
+      task: easy
+    grader:
+      type: rubric
+      name: trajectory
+    graders:
+      - type: rubric
+        name: trajectory
   - id: medium
+    reset_kwargs:
+      task: medium
+    grader:
+      type: rubric
+      name: trajectory
+    graders:
+      - type: rubric
+        name: trajectory
   - id: hard
+    reset_kwargs:
+      task: hard
+    grader:
+      type: rubric
+      name: trajectory
+    graders:
+      - type: rubric
+        name: trajectory

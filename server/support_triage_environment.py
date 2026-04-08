@@ -137,6 +137,7 @@ class SupportTriageEnvironment(Environment):
         self.total_tickets = len(self.queue)
         self.last_read_id = None
         self.read_count = 0
+        self.cumulative_score = 0.0
 
         return self._generate_observation("Environment reset. Ready to triage tickets.", 0.01, False)
 
